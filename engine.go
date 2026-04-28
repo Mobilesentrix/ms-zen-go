@@ -23,6 +23,14 @@ type EngineConfig struct {
 	CustomNodeHandler CustomNodeHandler
 }
 
+type DatabaseOptions struct {
+	MaxConnections *uint32 `json:"maxConnections,omitempty"`
+	MinConnections *uint32 `json:"minConnections,omitempty"`
+	AcquireTimeout *uint64 `json:"acquireTimeout,omitempty"`
+	IdleTimeout    *uint64 `json:"idleTimeout,omitempty"`
+	MaxLifetime    *uint64 `json:"maxLifetime,omitempty"`
+}
+
 //export zen_engine_go_loader_callback
 func zen_engine_go_loader_callback(h C.uintptr_t, key *C.char) C.ZenDecisionLoaderResult {
 	fn := cgo.Handle(h).Value().(func(*C.char) C.ZenDecisionLoaderResult)
@@ -54,6 +62,56 @@ func NewEngine(config EngineConfig) Engine {
 
 	newEngine.enginePtr = C.zen_engine_new_golang(&loaderHandlerIdPtr, &customNodeHandlerIdPtr)
 	return newEngine
+}
+
+func NewEngineWithDatabase(config EngineConfig, databaseUrl string, databaseOptions DatabaseOptions) (Engine, error) {
+	var newEngine = engine{}
+	var loaderHandlerIdPtr C.uintptr_t
+	var customNodeHandlerIdPtr C.uintptr_t
+
+	if config.Loader != nil {
+		newEngine.loaderHandler = cgo.NewHandle(wrapLoader(config.Loader))
+		loaderHandlerIdPtr = C.uintptr_t(newEngine.loaderHandler)
+		newEngine.customNodeHandlerIdPtr = &loaderHandlerIdPtr
+	}
+
+	if config.CustomNodeHandler != nil {
+		newEngine.customNodeHandler = cgo.NewHandle(wrapCustomNodeHandler(config.CustomNodeHandler))
+		customNodeHandlerIdPtr = C.uintptr_t(newEngine.customNodeHandler)
+		newEngine.customNodeHandlerIdPtr = &customNodeHandlerIdPtr
+	}
+
+	cDatabaseUrl := C.CString(databaseUrl)
+	defer C.free(unsafe.Pointer(cDatabaseUrl))
+
+	var cDatabaseOptions *C.char
+	optionsJson, err := json.Marshal(databaseOptions)
+
+	if err == nil && string(optionsJson) != "{}" {
+		cDatabaseOptions = C.CString(string(optionsJson))
+		defer C.free(unsafe.Pointer(cDatabaseOptions))
+	}
+
+	result := C.zen_engine_new_golang_with_database(
+		&loaderHandlerIdPtr,
+		&customNodeHandlerIdPtr,
+		cDatabaseUrl,
+		cDatabaseOptions,
+	)
+
+	if result.error != 0 {
+		var errorMessage string
+		if result.details != nil {
+			errorMessage = C.GoString(result.details)
+			C.free(unsafe.Pointer(result.details))
+		} else {
+			errorMessage = fmt.Sprintf("Database connection failed (error code: %d)", result.error)
+		}
+		return nil, fmt.Errorf("zen-engine: %s", errorMessage)
+	}
+
+	newEngine.enginePtr = result.result
+	return newEngine, nil
 }
 
 func (engine engine) Evaluate(key string, context any) (*EvaluationResponse, error) {
