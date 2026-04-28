@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gorules/zen-go"
+	"github.com/mayank-msphere/zen-go"
 )
 
 func readTestFile(key string) ([]byte, error) {

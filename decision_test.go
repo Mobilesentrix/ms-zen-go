@@ -2,7 +2,7 @@ package zen_test
 
 import (
 	"encoding/json"
-	"github.com/gorules/zen-go"
+	"github.com/mayank-msphere/zen-go"
 	"github.com/stretchr/testify/assert"
 	"sync"
 	"testing"

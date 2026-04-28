@@ -12,7 +12,7 @@ An open-source React editor is available on our [JDM Editor](https://github.com/
 ## Installation
 
 ```bash
-go get github.com/gorules/zen-go
+go get github.com/mayank-msphere/zen-go
 ```
 
 ## Usage
@@ -57,7 +57,7 @@ List of platforms where Zen Engine is natively available:
 
 * **NodeJS** - [GitHub](https://github.com/gorules/zen/blob/master/bindings/nodejs/README.md) | [Documentation](https://gorules.io/docs/developers/bre/engines/nodejs) | [npmjs](https://www.npmjs.com/package/@gorules/zen-engine)
 * **Python** - [GitHub](https://github.com/gorules/zen/blob/master/bindings/python/README.md) | [Documentation](https://gorules.io/docs/developers/bre/engines/python) | [pypi](https://pypi.org/project/zen-engine/)
-* **Go** - [GitHub](https://github.com/gorules/zen-go) | [Documentation](https://gorules.io/docs/developers/bre/engines/go)
+* **Go** - [GitHub](https://github.com/mayank-msphere/zen-go) | [Documentation](https://gorules.io/docs/developers/bre/engines/go)
 * **Rust (Core)** - [GitHub](https://github.com/gorules/zen) | [Documentation](https://gorules.io/docs/developers/bre/engines/rust) | [crates.io](https://crates.io/crates/zen-engine)
 
 For a complete **Business Rules Management Systems (BRMS)** solution:
