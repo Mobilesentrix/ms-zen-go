@@ -1,7 +1,7 @@
 package zen_test
 
 import (
-	"github.com/mayank-msphere/zen-go"
+	"github.com/Mobilesentrix/ms-zen-go"
 	"github.com/stretchr/testify/require"
 	"testing"
 )

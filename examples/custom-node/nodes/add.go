@@ -1,7 +1,7 @@
 package nodes
 
 import (
-	"github.com/mayank-msphere/zen-go"
+	"github.com/Mobilesentrix/ms-zen-go"
 )
 
 type addNode struct {

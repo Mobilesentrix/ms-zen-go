@@ -3,8 +3,8 @@ package main
 import (
 	"embed"
 	"fmt"
-	"github.com/mayank-msphere/zen-go"
-	"github.com/mayank-msphere/zen-go/examples/custom-node/nodes"
+	"github.com/Mobilesentrix/ms-zen-go"
+	"github.com/Mobilesentrix/ms-zen-go/examples/custom-node/nodes"
 	"path"
 )
 

@@ -2,7 +2,7 @@ package nodes
 
 import (
 	"errors"
-	"github.com/mayank-msphere/zen-go"
+	"github.com/Mobilesentrix/ms-zen-go"
 )
 
 type NodeHandler interface {

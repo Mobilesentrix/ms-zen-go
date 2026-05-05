@@ -1,4 +1,4 @@
-module github.com/mayank-msphere/zen-go
+module github.com/Mobilesentrix/ms-zen-go
 
 go 1.20
 

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/mayank-msphere/zen-go"
+	"github.com/Mobilesentrix/ms-zen-go"
 )
 
 func readTestFile(key string) ([]byte, error) {

@@ -1,6 +1,6 @@
 package nodes
 
-import "github.com/mayank-msphere/zen-go"
+import "github.com/Mobilesentrix/ms-zen-go"
 
 type divNode struct {
 }
