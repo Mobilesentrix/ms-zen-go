@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/gorules/zen-go/v2"
+	"github.com/Mobilesentrix/ms-zen-go/v2"
 )
 
 func readTestFile(key string) ([]byte, error) {

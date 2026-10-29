@@ -3,6 +3,8 @@ package zen
 // #include "zen_engine.h"
 import "C"
 
+// Loader returns the content of decision key. It runs inside the engine call
+// that needs the decision: it must not call Dispose on that engine.
 type Loader func(key string) ([]byte, error)
 
 func (Loader) engineLoader() {}

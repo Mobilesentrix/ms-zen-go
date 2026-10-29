@@ -1,4 +1,4 @@
-module github.com/gorules/zen-go/v2
+module github.com/Mobilesentrix/ms-zen-go/v2
 
 go 1.20
 

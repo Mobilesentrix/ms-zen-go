@@ -7,16 +7,28 @@ import (
 	"errors"
 	"fmt"
 	"runtime/cgo"
+	"strings"
+	"sync"
 	"unsafe"
 )
 
+// ErrEngineDisposed is returned by every Engine method called after Dispose.
+var ErrEngineDisposed = errors.New("zen-engine: engine has been disposed")
+
+// engine wraps the Rust ZenEngine. All methods are safe for concurrent use:
+// evaluations hold mu for reading while the Rust engine pointer is in use, and
+// Dispose takes it for writing, so the pointer is never freed under an
+// in-flight call and a second Dispose is a no-op.
 type engine struct {
-	loaderHandler          cgo.Handle
-	loaderHandlerIdPtr     *C.uintptr_t
-	customNodeHandler      cgo.Handle
-	customNodeHandlerIdPtr *C.uintptr_t
-	enginePtr              *C.ZenEngineStruct
-	initError              error
+	mu       sync.RWMutex
+	disposed bool
+
+	loaderHandler        cgo.Handle
+	hasLoaderHandler     bool
+	customNodeHandler    cgo.Handle
+	hasCustomNodeHandler bool
+	enginePtr            *C.ZenEngineStruct
+	initError            error
 }
 
 type EngineConfig struct {
@@ -45,7 +57,10 @@ func (config StaticLoader) cLoaderConfig() (C.ZenEngineLoaderConfig, func(), err
 		return C.ZenEngineLoaderConfig{}, nil, err
 	}
 
-	content := C.CString(string(data))
+	content, err := cString("static loader content", string(data))
+	if err != nil {
+		return C.ZenEngineLoaderConfig{}, nil, err
+	}
 	return C.ZenEngineLoaderConfig{
 		kind:    C.ZenLoaderConfigKind_Static,
 		content: content,
@@ -59,7 +74,10 @@ type FilesystemLoader struct {
 func (FilesystemLoader) engineLoader() {}
 
 func (config FilesystemLoader) cLoaderConfig() (C.ZenEngineLoaderConfig, func(), error) {
-	content := C.CString(config.Path)
+	content, err := cString("filesystem loader path", config.Path)
+	if err != nil {
+		return C.ZenEngineLoaderConfig{}, nil, err
+	}
 	return C.ZenEngineLoaderConfig{
 		kind:    C.ZenLoaderConfigKind_Filesystem,
 		content: content,
@@ -85,20 +103,53 @@ func (config ZipLoader) cLoaderConfig() (C.ZenEngineLoaderConfig, func(), error)
 	}, func() { C.free(bytes) }, nil
 }
 
+// cString copies s into C memory. C strings end at the first NUL byte, so a
+// value containing one would be silently truncated on the Rust side; it is
+// rejected instead. The caller frees the result with C.free.
+func cString(what string, s string) (*C.char, error) {
+	if strings.IndexByte(s, 0) >= 0 {
+		return nil, fmt.Errorf("zen-engine: %s contains a NUL byte", what)
+	}
+	return C.CString(s), nil
+}
+
+// The two exports below are called from Rust (inside the engine's tokio
+// runtime). A Go panic must not unwind through those foreign frames: it would
+// skip Rust destructors and leave the runtime in an undefined state. recover
+// converts it into an error result the engine reports as a loader/node error.
+
 //export zen_engine_go_loader_callback
-func zen_engine_go_loader_callback(h C.uintptr_t, key *C.char) C.ZenDecisionLoaderResult {
+func zen_engine_go_loader_callback(h C.uintptr_t, key *C.char) (result C.ZenDecisionLoaderResult) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = C.ZenDecisionLoaderResult{
+				content: nil,
+				error:   C.CString(fmt.Sprintf("panic in loader: %v", r)),
+			}
+		}
+	}()
+
 	fn := cgo.Handle(h).Value().(func(*C.char) C.ZenDecisionLoaderResult)
 	return fn(key)
 }
 
 //export zen_engine_go_custom_node_callback
-func zen_engine_go_custom_node_callback(h C.uintptr_t, request *C.char) C.ZenCustomNodeResult {
+func zen_engine_go_custom_node_callback(h C.uintptr_t, request *C.char) (result C.ZenCustomNodeResult) {
+	defer func() {
+		if r := recover(); r != nil {
+			result = C.ZenCustomNodeResult{
+				content: nil,
+				error:   C.CString(fmt.Sprintf("panic in custom node handler: %v", r)),
+			}
+		}
+	}()
+
 	fn := cgo.Handle(h).Value().(func(*C.char) C.ZenCustomNodeResult)
 	return fn(request)
 }
 
 func NewEngine(config EngineConfig) Engine {
-	var newEngine = engine{}
+	newEngine := &engine{}
 	var loaderHandlerIdPtr C.uintptr_t
 	var customNodeHandlerIdPtr C.uintptr_t
 
@@ -112,36 +163,27 @@ func NewEngine(config EngineConfig) Engine {
 	case LoaderConfig:
 		loaderConfig = loader
 	default:
-		return engine{initError: fmt.Errorf("unsupported loader type %T", config.Loader)}
+		return &engine{initError: fmt.Errorf("unsupported loader type %T", config.Loader)}
 	}
 
 	if config.CustomNodeHandler != nil {
-		newEngine.customNodeHandler = cgo.NewHandle(wrapCustomNodeHandler(config.CustomNodeHandler))
-		customNodeHandlerIdPtr = C.uintptr_t(newEngine.customNodeHandler)
-		newEngine.customNodeHandlerIdPtr = &customNodeHandlerIdPtr
+		customNodeHandlerIdPtr = newEngine.installCustomNodeHandler(config.CustomNodeHandler)
 	}
 
 	if loaderConfig != nil {
 		cConfig, freeConfig, err := loaderConfig.cLoaderConfig()
 		if err != nil {
 			newEngine.disposeHandlers()
-			return engine{initError: err}
+			return &engine{initError: err}
 		}
 		defer freeConfig()
 
+		// The handle ids are read by Rust during the call only (Option<&usize>
+		// is cloned immediately); no Go pointer is retained.
 		resultPtr := C.zen_engine_new_golang_with_loader_config(cConfig, &customNodeHandlerIdPtr)
 		if resultPtr.error > 0 {
 			newEngine.disposeHandlers()
-
-			var errorDetails string
-			if resultPtr.details != nil {
-				defer C.free(unsafe.Pointer(resultPtr.details))
-				errorDetails = C.GoString(resultPtr.details)
-			} else {
-				errorDetails = fmt.Sprintf("Error code: %d", resultPtr.error)
-			}
-
-			return engine{initError: errors.New(errorDetails)}
+			return &engine{initError: resultError(resultPtr.error, resultPtr.details)}
 		}
 
 		newEngine.enginePtr = resultPtr.result
@@ -149,85 +191,98 @@ func NewEngine(config EngineConfig) Engine {
 	}
 
 	if loaderCallback != nil {
-		newEngine.loaderHandler = cgo.NewHandle(wrapLoader(loaderCallback))
-		loaderHandlerIdPtr = C.uintptr_t(newEngine.loaderHandler)
-		newEngine.loaderHandlerIdPtr = &loaderHandlerIdPtr
+		loaderHandlerIdPtr = newEngine.installLoader(loaderCallback)
 	}
 
 	newEngine.enginePtr = C.zen_engine_new_golang(&loaderHandlerIdPtr, &customNodeHandlerIdPtr)
+	if newEngine.enginePtr == nil {
+		// The raw-pointer constructor returns NULL when a Rust panic was caught
+		// at the C boundary (MS-FFI.md, error code 13).
+		newEngine.disposeHandlers()
+		return &engine{initError: &Error{Code: ErrorCodePanic, Details: "zen-engine: engine creation failed (panic in libzen_ffi)"}}
+	}
 	return newEngine
 }
 
-func (engine engine) disposeHandlers() {
-	if engine.loaderHandlerIdPtr != nil {
+func (engine *engine) installLoader(loader Loader) C.uintptr_t {
+	engine.loaderHandler = cgo.NewHandle(wrapLoader(loader))
+	engine.hasLoaderHandler = true
+	return C.uintptr_t(engine.loaderHandler)
+}
+
+func (engine *engine) installCustomNodeHandler(handler CustomNodeHandler) C.uintptr_t {
+	engine.customNodeHandler = cgo.NewHandle(wrapCustomNodeHandler(handler))
+	engine.hasCustomNodeHandler = true
+	return C.uintptr_t(engine.customNodeHandler)
+}
+
+// resultError turns a ZenResult error into an *Error, freeing details.
+func resultError(code C.uint8_t, details *C.char) error {
+	if details == nil {
+		return &Error{Code: ErrorCode(code), Details: fmt.Sprintf("Error code: %d", code)}
+	}
+	defer C.free(unsafe.Pointer(details))
+	return &Error{Code: ErrorCode(code), Details: C.GoString(details)}
+}
+
+// disposeHandlers deletes the cgo handles exactly once. Callers hold mu or own
+// the engine exclusively (construction).
+func (engine *engine) disposeHandlers() {
+	if engine.hasLoaderHandler {
 		engine.loaderHandler.Delete()
+		engine.hasLoaderHandler = false
 	}
 
-	if engine.customNodeHandlerIdPtr != nil {
+	if engine.hasCustomNodeHandler {
 		engine.customNodeHandler.Delete()
+		engine.hasCustomNodeHandler = false
 	}
 }
 
-func (engine engine) Evaluate(key string, context any) (*EvaluationResponse, error) {
+// acquire pins the engine for one FFI call. The returned release must be
+// called when the call has returned.
+func (engine *engine) acquire() (release func(), err error) {
+	if engine.initError != nil {
+		return nil, engine.initError
+	}
+
+	engine.mu.RLock()
+	if engine.disposed {
+		engine.mu.RUnlock()
+		return nil, ErrEngineDisposed
+	}
+	return engine.mu.RUnlock, nil
+}
+
+func (engine *engine) Evaluate(key string, context any) (*EvaluationResponse, error) {
 	return engine.EvaluateWithOpts(key, context, EvaluationOptions{})
 }
 
-func (engine engine) EvaluateWithOpts(key string, context any, options EvaluationOptions) (*EvaluationResponse, error) {
+func (engine *engine) EvaluateWithOpts(key string, context any, options EvaluationOptions) (*EvaluationResponse, error) {
 	if engine.initError != nil {
 		return nil, engine.initError
 	}
-
-	jsonData, err := extractJsonFromAny(context)
+	jsonData, err := contextJSON(context)
 	if err != nil {
 		return nil, err
 	}
-
-	cKey := C.CString(key)
-	defer C.free(unsafe.Pointer(cKey))
-
-	cData := C.CString(string(jsonData))
-	defer C.free(unsafe.Pointer(cData))
-
-	maxDepth := options.MaxDepth
-	if maxDepth == 0 {
-		maxDepth = 1
-	}
-
-	resultPtr := C.zen_engine_evaluate(engine.enginePtr, cKey, cData, C.ZenEngineEvaluationOptions{
-		trace:     C.bool(options.Trace),
-		max_depth: C.uint8_t(maxDepth),
-	})
-	if resultPtr.error > 0 {
-		var errorDetails string
-		if resultPtr.details != nil {
-			defer C.free(unsafe.Pointer(resultPtr.details))
-			errorDetails = C.GoString(resultPtr.details)
-		} else {
-			errorDetails = fmt.Sprintf("Error code: %d", resultPtr.error)
-		}
-
-		return nil, errors.New(errorDetails)
-	}
-
-	defer C.free(unsafe.Pointer(resultPtr.result))
-	result := C.GoString(resultPtr.result)
-
-	var response EvaluationResponse
-	if err := json.Unmarshal([]byte(result), &response); err != nil {
+	raw, err := engine.EvaluateRaw(key, jsonData, options)
+	if err != nil {
 		return nil, err
 	}
-
-	return &response, nil
+	return decodeResponse(raw)
 }
 
-func (engine engine) EvaluateBatch(requests []EvaluateBatchRequest) ([]EvaluateBatchResult, error) {
+func (engine *engine) EvaluateBatch(requests []EvaluateBatchRequest) ([]EvaluateBatchResult, error) {
 	return engine.EvaluateBatchWithOpts(requests, EvaluationOptions{})
 }
 
-func (engine engine) EvaluateBatchWithOpts(requests []EvaluateBatchRequest, options EvaluationOptions) ([]EvaluateBatchResult, error) {
-	if engine.initError != nil {
-		return nil, engine.initError
+func (engine *engine) EvaluateBatchWithOpts(requests []EvaluateBatchRequest, options EvaluationOptions) ([]EvaluateBatchResult, error) {
+	release, err := engine.acquire()
+	if err != nil {
+		return nil, err
 	}
+	defer release()
 
 	if len(requests) == 0 {
 		return []EvaluateBatchResult{}, nil
@@ -251,31 +306,22 @@ func (engine engine) EvaluateBatchWithOpts(requests []EvaluateBatchRequest, opti
 			return nil, err
 		}
 
-		cRequests[i] = C.ZenEngineEvaluateBatchRequest{
-			key:     C.CString(request.Key),
-			context: C.CString(string(jsonData)),
+		cKey, err := cString(fmt.Sprintf("decision key of request %d", i), request.Key)
+		if err != nil {
+			return nil, err
 		}
+		cRequests[i].key = cKey
+
+		cContext, err := cString(fmt.Sprintf("evaluation context of request %d", i), string(jsonData))
+		if err != nil {
+			return nil, err
+		}
+		cRequests[i].context = cContext
 	}
 
-	maxDepth := options.MaxDepth
-	if maxDepth == 0 {
-		maxDepth = 1
-	}
-
-	resultPtr := C.zen_engine_evaluate_batch(engine.enginePtr, &cRequests[0], C.uintptr_t(len(requests)), C.ZenEngineEvaluationOptions{
-		trace:     C.bool(options.Trace),
-		max_depth: C.uint8_t(maxDepth),
-	})
+	resultPtr := C.zen_engine_evaluate_batch(engine.enginePtr, &cRequests[0], C.uintptr_t(len(requests)), cEvaluationOptions(options))
 	if resultPtr.error > 0 {
-		var errorDetails string
-		if resultPtr.details != nil {
-			defer C.free(unsafe.Pointer(resultPtr.details))
-			errorDetails = C.GoString(resultPtr.details)
-		} else {
-			errorDetails = fmt.Sprintf("Error code: %d", resultPtr.error)
-		}
-
-		return nil, errors.New(errorDetails)
+		return nil, resultError(resultPtr.error, resultPtr.details)
 	}
 
 	defer C.free(unsafe.Pointer(resultPtr.result))
@@ -289,58 +335,77 @@ func (engine engine) EvaluateBatchWithOpts(requests []EvaluateBatchRequest, opti
 	return response, nil
 }
 
-func (engine engine) GetDecision(key string) (Decision, error) {
-	if engine.initError != nil {
-		return nil, engine.initError
+func (engine *engine) GetDecision(key string) (Decision, error) {
+	release, err := engine.acquire()
+	if err != nil {
+		return nil, err
 	}
+	defer release()
 
-	cKey := C.CString(key)
+	cKey, err := cString("decision key", key)
+	if err != nil {
+		return nil, err
+	}
 	defer C.free(unsafe.Pointer(cKey))
 
 	decisionPtr := C.zen_engine_get_decision(engine.enginePtr, cKey)
 	if decisionPtr.error > 0 {
-		var errorDetails string
-		if decisionPtr.details != nil {
-			defer C.free(unsafe.Pointer(decisionPtr.details))
-			errorDetails = C.GoString(decisionPtr.details)
-		} else {
-			errorDetails = fmt.Sprintf("Error code: %d", decisionPtr.error)
-		}
-
-		return nil, errors.New(errorDetails)
+		return nil, resultError(decisionPtr.error, decisionPtr.details)
 	}
 
 	return newDecision(decisionPtr.result), nil
 }
 
-func (engine engine) CreateDecision(data []byte) (Decision, error) {
-	if engine.initError != nil {
-		return nil, engine.initError
+func (engine *engine) CreateDecision(data []byte) (Decision, error) {
+	release, err := engine.acquire()
+	if err != nil {
+		return nil, err
 	}
+	defer release()
 
-	cData := C.CString(string(data))
+	cData, err := cString("decision content", string(data))
+	if err != nil {
+		return nil, err
+	}
 	defer C.free(unsafe.Pointer(cData))
 
 	decisionPtr := C.zen_engine_create_decision(engine.enginePtr, cData)
 	if decisionPtr.error > 0 {
-		var errorDetails string
-		if decisionPtr.details != nil {
-			defer C.free(unsafe.Pointer(decisionPtr.details))
-			errorDetails = C.GoString(decisionPtr.details)
-		} else {
-			errorDetails = fmt.Sprintf("Error code: %d", decisionPtr.error)
-		}
-
-		return nil, errors.New(errorDetails)
+		return nil, resultError(decisionPtr.error, decisionPtr.details)
 	}
 
 	return newDecision(decisionPtr.result), nil
 }
 
-func (engine engine) Dispose() {
+// Dispose frees the Rust engine and the callback handles. It waits for
+// in-flight calls to return and is safe to call more than once. A Loader or
+// CustomNodeHandler runs inside an engine call, so it must not call Dispose on
+// the same engine (that call would wait for itself).
+func (engine *engine) Dispose() {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+
+	if engine.disposed {
+		return
+	}
+	engine.disposed = true
+
 	if engine.enginePtr != nil {
 		C.zen_engine_free(engine.enginePtr)
+		engine.enginePtr = nil
 	}
 
 	engine.disposeHandlers()
+}
+
+func cEvaluationOptions(options EvaluationOptions) C.ZenEngineEvaluationOptions {
+	maxDepth := options.MaxDepth
+	if maxDepth == 0 {
+		maxDepth = 1
+	}
+
+	return C.ZenEngineEvaluationOptions{
+		trace:     C.bool(options.Trace),
+		max_depth: C.uint8_t(maxDepth),
+	}
 }

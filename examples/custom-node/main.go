@@ -3,8 +3,8 @@ package main
 import (
 	"embed"
 	"fmt"
-	"github.com/gorules/zen-go/v2"
-	"github.com/gorules/zen-go/v2/examples/custom-node/nodes"
+	"github.com/Mobilesentrix/ms-zen-go/v2"
+	"github.com/Mobilesentrix/ms-zen-go/v2/examples/custom-node/nodes"
 	"path"
 )
 
