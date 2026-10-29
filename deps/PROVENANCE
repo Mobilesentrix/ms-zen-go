@@ -1,0 +1,36 @@
+Provenance of the libzen_ffi libraries in deps/ (one entry per file).
+
+deps/linux_amd64/libzen_ffi.a
+  source:   the MobileSentrix zen fork (FORK.md there), commit 15e5ac1
+  compiler: rustc 1.99.1 (58cf8f9c3 2026-10-13), image rust:1-bookworm (glibc 2.36)
+  target:   x86_64-unknown-linux-gnu, cargo build --locked --release -p zen-ffi, strip --strip-debug
+  sha256:   cdd95993a1943eef16ab02f5a8663422c5f9c9b707ee9825b38b64672604525c
+  status:   supported
+
+deps/linux_arm64/libzen_ffi.a
+  source:   the MobileSentrix zen fork (FORK.md there), commit 15e5ac1
+  compiler: rustc 1.99.1 (58cf8f9c3 2026-10-13), image rust:1-bookworm (glibc 2.36), aarch64-linux-gnu-gcc (Debian 12.2.0-14) 12.2.0
+  target:   aarch64-unknown-linux-gnu, cargo build --locked --release -p zen-ffi, aarch64-linux-gnu-strip --strip-debug
+  sha256:   9a73f35cfa47f51f163399e3b0bea84b25f5367439d38fca0d785c6de30f2625
+  status:   supported
+
+deps/darwin_amd64/libzen_ffi.a
+  source:   upstream gorules/zen-go v2.1.2 (commit 91f6a7e), unchanged; engine 2.1.2 without the fork's changes
+  compiler: not published by upstream
+  target:   x86_64-apple-darwin
+  sha256:   de2e47a2c81d1ac8817fc02f1ccf33ed7fae875ab4f6cc1998e66506b897cf4c
+  status:   not rebuilt for this release; local development only, not supported for production
+
+deps/darwin_arm64/libzen_ffi.a
+  source:   upstream gorules/zen-go v2.1.2 (commit 91f6a7e), unchanged; engine 2.1.2 without the fork's changes
+  compiler: not published by upstream
+  target:   aarch64-apple-darwin
+  sha256:   d0dbbf47d0991f0dd38d5cef5f619c65bdccecb185156d518d8f33796056cb87
+  status:   not rebuilt for this release; local development only, not supported for production
+
+deps/windows_amd64/libzen_ffi.a
+  source:   upstream gorules/zen-go v2.1.2 (commit 91f6a7e), unchanged; engine 2.1.2 without the fork's changes
+  compiler: not published by upstream
+  target:   windows amd64 (upstream build; toolchain not published)
+  sha256:   15a65011d83b10eeb700956bb55da829b7b9bdc40957ddd8ff8aa09d8bb939ed
+  status:   not rebuilt for this release; local development only, not supported for production
