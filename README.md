@@ -1,5 +1,11 @@
 # Go Rules Engine
 
+## This fork
+
+This is the MobileSentrix fork of gorules/zen-go (`github.com/Mobilesentrix/ms-zen-go/v2`). It links
+the MobileSentrix zen engine and adds the database node, the decision cache and raw evaluation. What
+it adds, how to build it and how to update it from upstream: [FORK.md](FORK.md).
+
 **Business logic humans can read and machines can run.** One copy of your rules: the owner reads it, every system runs it.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
