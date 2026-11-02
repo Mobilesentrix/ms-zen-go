@@ -197,7 +197,7 @@ func NewEngine(config EngineConfig) Engine {
 	newEngine.enginePtr = C.zen_engine_new_golang(&loaderHandlerIdPtr, &customNodeHandlerIdPtr)
 	if newEngine.enginePtr == nil {
 		// The raw-pointer constructor returns NULL when a Rust panic was caught
-		// at the C boundary (MS-FFI.md, error code 13).
+		// at the C boundary (error code 13).
 		newEngine.disposeHandlers()
 		return &engine{initError: &Error{Code: ErrorCodePanic, Details: "zen-engine: engine creation failed (panic in libzen_ffi)"}}
 	}

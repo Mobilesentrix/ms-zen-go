@@ -136,9 +136,8 @@ func cBytes(what string, b []byte) (*C.char, error) {
 	return p, nil
 }
 
-// takeBytes copies the engine's NUL-terminated result into Go memory and frees
-// it. The copying APIs use it directly instead of a RawResult: the finalizer a
-// RawResult registers costs about as much as a small evaluation itself.
+// it. The copying APIs use it directly: a RawResult finalizer costs about as
+// much as a small evaluation.
 func takeBytes(p *C.char, err error) ([]byte, error) {
 	if err != nil {
 		return nil, err

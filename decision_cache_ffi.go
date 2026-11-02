@@ -11,8 +11,7 @@ import (
 
 // The MobileSentrix libzen_ffi (deps/linux_amd64, deps/linux_arm64) caches the
 // compiled decision of every key its loader returned and exports
-// zen_engine_invalidate_decision / zen_engine_clear_decisions
-// (MS-FFI.md "Decision cache" of the zen fork).
+// zen_engine_invalidate_decision / zen_engine_clear_decisions.
 
 // cacheCallError maps the status of zen_engine_invalidate_decision /
 // zen_engine_clear_decisions (0 ok, 1 InvalidArgument, 13 Panic).

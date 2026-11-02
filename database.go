@@ -7,7 +7,7 @@ import (
 )
 
 // DatabaseNodeKind is the custom-node kind that carries a MobileSentrix database
-// fetch (contract: MS-FFI.md §3 of the zen fork). Rule JSON stored by the editor uses
+// fetch. Rule JSON stored by the editor uses
 // `"type": "databaseNode"`; the rule engine module rewrites those nodes to
 //
 //	{"type": "customNode", "content": {"kind": DatabaseNodeKind, "config": {...}}}

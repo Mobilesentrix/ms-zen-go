@@ -45,8 +45,7 @@ func parentGraph(child string) []byte {
 }`, child))
 }
 
-// mutableLoader is a loader whose content can change between evaluations, like
-// module-go's RulesStorage after a save or an S3 refresh.
+// mutableLoader is a loader whose content can change between evaluations.
 type mutableLoader struct {
 	mu    sync.RWMutex
 	rules map[string][]byte
@@ -81,7 +80,7 @@ func evaluateVersion(t *testing.T, engine zen.Engine, key string) string {
 	return string(response.Result)
 }
 
-// The engine compiles each key once (MS-FFI.md "Decision cache"): a changed
+// The engine compiles each key once: a changed
 // rule keeps being served from the cache until it is invalidated.
 func TestEngine_InvalidateDecisionReloadsOneKey(t *testing.T) {
 	loader := newMutableLoader(map[string][]byte{"a": versionGraph(1), "b": versionGraph(10)})

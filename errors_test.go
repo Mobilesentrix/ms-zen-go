@@ -31,8 +31,7 @@ func TestErrorCode_Names(t *testing.T) {
 }
 
 // Engine failures carry the FFI error code; the message is the engine's
-// details string, unchanged, so callers that parse it (backend sendEngineError)
-// keep working.
+// details string, unchanged, so callers that parse it keep working.
 func TestEngine_EvaluationErrorCarriesCode(t *testing.T) {
 	engine := zen.NewEngine(zen.EngineConfig{Loader: zen.Loader(readTestFile)})
 	defer engine.Dispose()

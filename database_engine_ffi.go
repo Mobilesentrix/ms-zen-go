@@ -15,7 +15,7 @@ import (
 const DatabaseSupported = true
 
 // NewEngineWithDatabases creates an engine whose database nodes run natively in
-// the MobileSentrix database plug-in (MS-FFI.md of the zen fork). Pools are created
+// the MobileSentrix database plug-in. Pools are created
 // once per engine; create one engine per process and reuse it. Custom nodes of
 // any other kind go to config.CustomNodeHandler.
 func NewEngineWithDatabases(config EngineConfig, database DatabaseConfig) (Engine, error) {
@@ -25,7 +25,7 @@ func NewEngineWithDatabases(config EngineConfig, database DatabaseConfig) (Engin
 	}
 
 	// The JSON (connection URLs included) is only read during the constructor
-	// call (MS-FFI.md §1) and is freed right after; it is never logged.
+	// call and is freed right after; it is never logged.
 	cDatabase, err := cString("database config", databaseJSON)
 	if err != nil {
 		return nil, err
