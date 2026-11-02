@@ -2,17 +2,10 @@
 
 package zen
 
-import (
-	"errors"
-	"strings"
-)
+import "strings"
 
-// The upstream gorules libzen_ffi used on this platform has no compiled-decision
-// cache for loader engines (every evaluation goes through the loader) and does
-// not export the invalidate/clear functions, so there is nothing to drop: both
-// methods only check their input and the engine state, keeping the linux contract.
-
-// InvalidateDecision is a no-op on this platform (no decision cache).
+// InvalidateDecision only checks its input and the engine state: the libzen_ffi
+// of this platform has no decision cache, every evaluation goes through the loader.
 func (engine *engine) InvalidateDecision(key string) error {
 	release, err := engine.acquire()
 	if err != nil {
@@ -21,12 +14,12 @@ func (engine *engine) InvalidateDecision(key string) error {
 	defer release()
 
 	if strings.IndexByte(key, 0) >= 0 {
-		return errors.New("zen-engine: decision key contains a NUL byte")
+		return containsNULError("decision key")
 	}
 	return nil
 }
 
-// ClearDecisions is a no-op on this platform (no decision cache).
+// ClearDecisions only checks the engine state (see InvalidateDecision).
 func (engine *engine) ClearDecisions() error {
 	release, err := engine.acquire()
 	if err != nil {

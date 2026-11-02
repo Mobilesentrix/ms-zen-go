@@ -8,18 +8,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
-	"runtime"
-	"sync"
 	"unsafe"
 )
 
 // RawEvaluator evaluates with the context as JSON bytes and returns the
 // engine's response JSON ({"performance", "result", "trace"?}) exactly as the
-// engine wrote it. It skips the Go map and both Go JSON round trips of
-// EvaluateWithOpts; the trace key is absent when options.Trace is false.
-// The engine returned by NewEngine implements it.
+// engine wrote it, without decoding the context or the response in Go. The trace
+// key is absent when options.Trace is false. The engine returned by NewEngine
+// implements it.
 type RawEvaluator interface {
 	EvaluateRaw(key string, context []byte, options EvaluationOptions) ([]byte, error)
 }
@@ -41,121 +37,61 @@ type ResultDecision interface {
 	EvaluateResult(context []byte, options EvaluationOptions) (*RawResult, error)
 }
 
-// RawResult is an engine response JSON that is not copied into Go memory: a
-// traced response can be tens of megabytes, and copying it (then copying it
-// again into an HTTP response) would grow the Go heap by several times that per
-// request. It reads like a bytes.Reader over the engine's buffer, and Close
-// frees the buffer; after Close it reads as empty. Close it exactly when the
-// bytes are no longer needed (an HTTP server closes a body stream once it has
-// written it). A RawResult that is never closed is freed when it is garbage
-// collected.
-type RawResult struct {
-	mu   sync.Mutex
-	p    *C.char
-	n    int
-	read int
+var (
+	_ RawEvaluator    = (*engine)(nil)
+	_ ResultEvaluator = (*engine)(nil)
+	_ DecisionCache   = (*engine)(nil)
+	_ RawDecision     = (*decision)(nil)
+	_ ResultDecision  = (*decision)(nil)
+)
+
+// errNoResult reports an engine success without a result string, so a nil
+// pointer never reaches strlen.
+var errNoResult = errors.New("zen-engine: the engine returned no result")
+
+// cView is size bytes of C memory at data as a Go slice, without copying.
+func cView(data *C.char, size int) []byte {
+	return unsafe.Slice((*byte)(unsafe.Pointer(data)), size)
 }
 
-func newRawResult(p *C.char) *RawResult {
-	r := &RawResult{p: p, n: int(C.strlen(p))} // p is non-nil (see evaluateC)
-	runtime.SetFinalizer(r, (*RawResult).Close)
-	return r
-}
-
-// Len is the size of the JSON in bytes.
-func (r *RawResult) Len() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.n
-}
-
-// Read implements io.Reader over the JSON.
-func (r *RawResult) Read(b []byte) (int, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.p == nil || r.read >= r.n {
-		return 0, io.EOF
-	}
-	view := unsafe.Slice((*byte)(unsafe.Pointer(r.p)), r.n)
-	k := copy(b, view[r.read:])
-	r.read += k
-	return k, nil
-}
-
-// LastByte is the final byte of the JSON (false when it is empty or closed).
-func (r *RawResult) LastByte() (byte, bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.p == nil || r.n == 0 {
-		return 0, false
-	}
-	return unsafe.Slice((*byte)(unsafe.Pointer(r.p)), r.n)[r.n-1], true
-}
-
-// Bytes copies the JSON into Go memory.
-func (r *RawResult) Bytes() []byte {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.p == nil {
-		return nil
-	}
-	return goBytes(r.p, r.n)
-}
-
-// goBytes copies n bytes at p into Go memory. Unlike C.GoBytes it takes an int,
-// so a response over 2 GiB is copied whole instead of overflowing C.int.
-func goBytes(p *C.char, n int) []byte {
-	out := make([]byte, n)
-	copy(out, unsafe.Slice((*byte)(unsafe.Pointer(p)), n))
+// goBytes copies size bytes at data into Go memory. size is not limited to the
+// C.int range of C.GoBytes.
+func goBytes(data *C.char, size int) []byte {
+	out := make([]byte, size)
+	copy(out, cView(data, size))
 	return out
 }
 
-// Close frees the engine's buffer; later calls do nothing.
-func (r *RawResult) Close() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.p != nil {
-		C.free(unsafe.Pointer(r.p))
-		r.p, r.n, r.read = nil, 0, 0
-		runtime.SetFinalizer(r, nil)
-	}
-	return nil
-}
-
-// cBytes copies b into NUL-terminated C memory in one copy. Like cString it
-// rejects a NUL byte, which the engine would read as the end of the string.
-// The caller frees the result with C.free.
+// cBytes copies b into NUL-terminated C memory. Like cString it rejects a NUL
+// byte. The caller frees the result with C.free.
 func cBytes(what string, b []byte) (*C.char, error) {
 	if bytes.IndexByte(b, 0) >= 0 {
-		return nil, fmt.Errorf("zen-engine: %s contains a NUL byte", what)
+		return nil, containsNULError(what)
 	}
-	p := (*C.char)(C.malloc(C.size_t(len(b) + 1)))
-	buf := unsafe.Slice((*byte)(unsafe.Pointer(p)), len(b)+1)
-	copy(buf, b)
-	buf[len(b)] = 0
-	return p, nil
+	buffer := (*C.char)(C.malloc(C.size_t(len(b) + 1)))
+	view := cView(buffer, len(b)+1)
+	copy(view, b)
+	view[len(b)] = 0
+	return buffer, nil
 }
 
-// it. The copying APIs use it directly: a RawResult finalizer costs about as
-// much as a small evaluation.
-func takeBytes(p *C.char, err error) ([]byte, error) {
+// takeBytes copies the engine's result string into Go memory and frees it. Its
+// parameters match the results of evaluateC so that it can wrap the call.
+func takeBytes(text *C.char, err error) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer C.free(unsafe.Pointer(p))
-	return goBytes(p, int(C.strlen(p))), nil
+	defer C.free(unsafe.Pointer(text))
+	return goBytes(text, int(C.strlen(text))), nil
 }
 
-// errNoResult: the engine reported success without a result string (never
-// expected; guarded so a nil pointer never reaches strlen).
-var errNoResult = errors.New("zen-engine: the engine returned no result")
-
-// wrapResult hands the engine's result out as a RawResult.
-func wrapResult(p *C.char, err error) (*RawResult, error) {
+// wrapResult hands the engine's result string out as a RawResult. Its parameters
+// match the results of evaluateC so that it can wrap the call.
+func wrapResult(text *C.char, err error) (*RawResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	return newRawResult(p), nil
+	return newRawResult(text), nil
 }
 
 // contextJSON is the context as JSON bytes: []byte and json.RawMessage are
@@ -178,7 +114,7 @@ func (engine *engine) EvaluateResult(key string, context []byte, options Evaluat
 	return wrapResult(engine.evaluateC(key, context, options))
 }
 
-// evaluateC is the engine's result JSON in C memory, for the caller to free.
+// evaluateC returns the engine's response JSON in C memory, for the caller to free.
 func (engine *engine) evaluateC(key string, context []byte, options EvaluationOptions) (*C.char, error) {
 	release, err := engine.acquire()
 	if err != nil {
@@ -216,17 +152,18 @@ func (decision *decision) EvaluateResult(context []byte, options EvaluationOptio
 	return wrapResult(decision.evaluateC(context, options))
 }
 
+// evaluateC returns the decision's response JSON in C memory, for the caller to free.
 func (decision *decision) evaluateC(context []byte, options EvaluationOptions) (*C.char, error) {
 	decision.mu.RLock()
 	defer decision.mu.RUnlock()
 	if decision.disposed {
 		return nil, ErrDecisionDisposed
 	}
-	return decision.evaluateRawLocked(context, options)
+	return decision.evaluateCLocked(context, options)
 }
 
-// evaluateRawLocked runs with decision.mu held for reading.
-func (decision *decision) evaluateRawLocked(context []byte, options EvaluationOptions) (*C.char, error) {
+// evaluateCLocked is evaluateC for a caller that holds decision.mu for reading.
+func (decision *decision) evaluateCLocked(context []byte, options EvaluationOptions) (*C.char, error) {
 	cData, err := cBytes("evaluation context", context)
 	if err != nil {
 		return nil, err

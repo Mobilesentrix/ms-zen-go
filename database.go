@@ -6,19 +6,14 @@ import (
 	"fmt"
 )
 
-// DatabaseNodeKind is the custom-node kind that carries a MobileSentrix database
-// fetch. Rule JSON stored by the editor uses
-// `"type": "databaseNode"`; the rule engine module rewrites those nodes to
+// DatabaseNodeKind is the custom-node kind of a database fetch:
 //
 //	{"type": "customNode", "content": {"kind": DatabaseNodeKind, "config": {...}}}
 //
-// before the engine sees them (engine 2.x has no native database node). The
-// config holds `query`, `outputPath`, `passThrough` and optionally `instance`.
-//
-// When the linked libzen_ffi includes the MobileSentrix database plug-in
-// (DatabaseSupported) and the engine was created with NewEngineWithDatabase(s),
-// these nodes run natively in Rust. Otherwise they reach the Go custom-node
-// handler and fail with ErrDatabaseNodeUnavailable.
+// The config holds `query`, `outputPath`, `passThrough` and optionally `instance`.
+// With DatabaseSupported and an engine from NewEngineWithDatabase(s) these nodes
+// run natively in Rust. Otherwise they reach the Go custom-node handler and fail
+// with ErrDatabaseNodeUnavailable.
 const DatabaseNodeKind = "database"
 
 // DefaultDatabaseConnection is the connection name NewEngineWithDatabase uses for
@@ -58,9 +53,8 @@ type DatabaseConnection struct {
 	// default). AcquireTimeout only bounds obtaining a connection.
 	QueryTimeout *uint64 `json:"queryTimeout,omitempty"`
 	// TestBeforeAcquire pings a pooled connection before each query (plug-in
-	// default true). false saves one server round trip per query; keep
-	// IdleTimeout below every idle disconnect on the path (server wait_timeout,
-	// load-balancer idle timeout) when it is off.
+	// default true). When it is false, keep IdleTimeout below every idle
+	// disconnect on the path (server wait_timeout, load-balancer idle timeout).
 	TestBeforeAcquire *bool `json:"testBeforeAcquire,omitempty"`
 	// SessionVariables are `SET name = value` statements run on every new
 	// connection, e.g. StarRocks {"enable_short_circuit": "true"}. Names must be

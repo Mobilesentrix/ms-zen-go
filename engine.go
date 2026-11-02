@@ -103,20 +103,17 @@ func (config ZipLoader) cLoaderConfig() (C.ZenEngineLoaderConfig, func(), error)
 	}, func() { C.free(bytes) }, nil
 }
 
-// cString copies s into C memory. C strings end at the first NUL byte, so a
-// value containing one would be silently truncated on the Rust side; it is
-// rejected instead. The caller frees the result with C.free.
-func cString(what string, s string) (*C.char, error) {
+// cString copies s into C memory, rejecting a NUL byte, which C would read as
+// the end of the string. The caller frees the result with C.free.
+func cString(what, s string) (*C.char, error) {
 	if strings.IndexByte(s, 0) >= 0 {
-		return nil, fmt.Errorf("zen-engine: %s contains a NUL byte", what)
+		return nil, containsNULError(what)
 	}
 	return C.CString(s), nil
 }
 
-// The two exports below are called from Rust (inside the engine's tokio
-// runtime). A Go panic must not unwind through those foreign frames: it would
-// skip Rust destructors and leave the runtime in an undefined state. recover
-// converts it into an error result the engine reports as a loader/node error.
+// The two exports below are called from Rust. A Go panic must not unwind through
+// those frames: recover turns it into an error result for the engine to report.
 
 //export zen_engine_go_loader_callback
 func zen_engine_go_loader_callback(h C.uintptr_t, key *C.char) (result C.ZenDecisionLoaderResult) {
@@ -301,22 +298,9 @@ func (engine *engine) EvaluateBatchWithOpts(requests []EvaluateBatchRequest, opt
 	}()
 
 	for i, request := range requests {
-		jsonData, err := extractJsonFromAny(request.Context)
-		if err != nil {
+		if err := fillCBatchRequest(&cRequests[i], i, request); err != nil {
 			return nil, err
 		}
-
-		cKey, err := cString(fmt.Sprintf("decision key of request %d", i), request.Key)
-		if err != nil {
-			return nil, err
-		}
-		cRequests[i].key = cKey
-
-		cContext, err := cString(fmt.Sprintf("evaluation context of request %d", i), string(jsonData))
-		if err != nil {
-			return nil, err
-		}
-		cRequests[i].context = cContext
 	}
 
 	resultPtr := C.zen_engine_evaluate_batch(engine.enginePtr, &cRequests[0], C.uintptr_t(len(requests)), cEvaluationOptions(options))
@@ -333,6 +317,28 @@ func (engine *engine) EvaluateBatchWithOpts(requests []EvaluateBatchRequest, opt
 	}
 
 	return response, nil
+}
+
+// fillCBatchRequest sets the C strings of target, one at a time, so that the
+// caller can free whatever was set when a later field fails.
+func fillCBatchRequest(target *C.ZenEngineEvaluateBatchRequest, index int, request EvaluateBatchRequest) error {
+	jsonData, err := extractJsonFromAny(request.Context)
+	if err != nil {
+		return err
+	}
+
+	cKey, err := cString(fmt.Sprintf("decision key of request %d", index), request.Key)
+	if err != nil {
+		return err
+	}
+	target.key = cKey
+
+	cContext, err := cString(fmt.Sprintf("evaluation context of request %d", index), string(jsonData))
+	if err != nil {
+		return err
+	}
+	target.context = cContext
+	return nil
 }
 
 func (engine *engine) GetDecision(key string) (Decision, error) {

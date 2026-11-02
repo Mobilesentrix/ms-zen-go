@@ -17,7 +17,7 @@ zen fork.
 | `NewEngineWithDatabase(s)`, `DatabaseConfig`, `DatabaseSupported`, `DatabaseNodeUnavailableHandler` | `database*.go` | Rules run database nodes natively in the engine; other platforms fail those nodes with `ErrDatabaseNodeUnavailable` |
 | `DecisionCache` (`InvalidateDecision` / `ClearDecisions`), an optional interface of `Engine` like `RawEvaluator` | `decision_cache_*.go`, `zen.go` | The engine caches compiled decisions per key; the embedder says when a rule changed (no-ops where the lib has no cache). `Engine` itself is upstream's interface |
 | `*Error` with `ErrorCode` (12 database config, 13 panic); `Error()` is the engine's details string unchanged | `errors.go` | Callers can branch on the code and still parse the message |
-| `EvaluateRaw` / `EvaluateResult` (`RawEvaluator`, `ResultEvaluator`, `RawResult`) | `raw.go` | The context goes in as JSON bytes and the response comes out as the engine wrote it; `RawResult` reads it from engine memory without a Go copy |
+| `EvaluateRaw` / `EvaluateResult` (`RawEvaluator`, `ResultEvaluator`, `RawResult`) | `raw.go`, `raw_result.go` | The context goes in as JSON bytes and the response comes out as the engine wrote it; `RawResult` reads it from engine memory without a Go copy |
 | Go panics in loader/custom-node callbacks are recovered; `Dispose` is idempotent and waits for in-flight calls (so a loader or handler must not call `Dispose` on the engine that called it); strings with a NUL byte are rejected | `engine.go`, `decision.go` | A panic must not unwind through Rust frames; no use of a freed engine; C strings would be truncated at the NUL |
 | Module path `github.com/Mobilesentrix/ms-zen-go/v2` | `go.mod`, examples | Published separately from upstream |
 

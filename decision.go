@@ -41,7 +41,7 @@ func (decision *decision) EvaluateWithOpts(context any, options EvaluationOption
 	if err != nil {
 		return nil, err
 	}
-	raw, err := takeBytes(decision.evaluateRawLocked(jsonData, options))
+	raw, err := takeBytes(decision.evaluateCLocked(jsonData, options))
 	if err != nil {
 		return nil, err
 	}

@@ -6,8 +6,6 @@ import (
 )
 
 // ErrorCode is the error code a libzen_ffi call returns (ZenResult.error).
-// 0–11 are upstream zen; 12 (the database connection map was rejected) and 13
-// (a Rust panic was caught at the C boundary) are MobileSentrix additions.
 type ErrorCode uint8
 
 const (
@@ -53,8 +51,8 @@ func (code ErrorCode) String() string {
 }
 
 // Error is a failed libzen_ffi call. Error() returns the engine's details
-// string unchanged (usually JSON such as {"type":"NodeError",...}), exactly as
-// upstream's plain errors, so callers that parse it keep working.
+// string unchanged (usually JSON such as {"type":"NodeError",...}); callers
+// parse it.
 type Error struct {
 	Code    ErrorCode
 	Details string
@@ -69,4 +67,9 @@ func (err *Error) Error() string {
 func IsErrorCode(err error, code ErrorCode) bool {
 	var zenErr *Error
 	return errors.As(err, &zenErr) && zenErr.Code == code
+}
+
+// containsNULError rejects a value that C would truncate at its first NUL byte.
+func containsNULError(what string) error {
+	return fmt.Errorf("zen-engine: %s contains a NUL byte", what)
 }
