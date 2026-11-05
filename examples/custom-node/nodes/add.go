@@ -1,7 +1,7 @@
 package nodes
 
 import (
-	"github.com/gorules/zen-go"
+	"github.com/Mobilesentrix/ms-zen-go/v2"
 )
 
 type addNode struct {

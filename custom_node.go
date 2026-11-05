@@ -8,6 +8,9 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+// CustomNodeHandler answers custom nodes. It runs inside the engine call that
+// reached the node: it may evaluate other engines, but must not call Dispose on
+// the engine that called it.
 type CustomNodeHandler func(request NodeRequest) (NodeResponse, error)
 
 type CustomNode struct {
