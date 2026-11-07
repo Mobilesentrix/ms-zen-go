@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.1.6-ms.16
+
+Libraries rebuilt from the zen fork at commit 794be1f (linux amd64 and arm64; C header unchanged):
+
+- Expression list functions: `sort`, `sortBy`, `minBy`, `maxBy`, `unique`, `uniqueBy`, `countDistinct`,
+  `groupBy`, `keyBy`, `join`, `first`, `last`, `reduce`, `scan`.
+- `executionMode: "sequential"` for decision, decision-table and expression steps (state carried item to item).
+- Database node on StarRocks: every query is prepared, run and closed, because StarRocks re-executes a
+  cached prepared statement containing a subquery with its first parameters (wrong rows).
+
 ## Unreleased — Rule Engine v2
 
 Tags are `v2.1.6-ms.N` (engine 2.1.6, fork release N). Base: zen-go `v2.1.2`.
