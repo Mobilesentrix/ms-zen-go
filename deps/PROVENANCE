@@ -1,17 +1,17 @@
 Provenance of the libzen_ffi libraries in deps/ (one entry per file).
 
 deps/linux_amd64/libzen_ffi.a
-  source:   the MobileSentrix zen fork (FORK.md there), commit d37a89b
+  source:   the MobileSentrix zen fork (FORK.md there), commit 5f2abea
   compiler: rustc 1.99.1 (58cf8f9c3 2026-10-13), image rust:1-bookworm (glibc 2.36)
-  target:   x86_64-unknown-linux-gnu, cargo build --locked --release -p zen-ffi, strip --strip-debug
-  sha256:   4c7f103e00ce538b69bb510487cde78dba1b2f766fceed1778d9f24e263755ab
+  target:   x86_64-unknown-linux-gnu, cargo build --release -p zen-ffi (Cargo.lock as committed), strip --strip-debug
+  sha256:   eb76c8b7809bb0ec11b2022a1fb8f054dd371156d911e5a2f870ae11f3f75556
   status:   supported
 
 deps/linux_arm64/libzen_ffi.a
-  source:   the MobileSentrix zen fork (FORK.md there), commit d37a89b
-  compiler: rustc 1.99.1 (58cf8f9c3 2026-10-13), image rust:1-bookworm (glibc 2.36), aarch64-linux-gnu-gcc (Debian 12.2.0-14) 12.2.0
-  target:   aarch64-unknown-linux-gnu, cargo build --locked --release -p zen-ffi, aarch64-linux-gnu-strip --strip-debug
-  sha256:   4148db1c91dd762c55486e7e7a5e1abc0834c98a945ec404d4496789487282d6
+  source:   the MobileSentrix zen fork (FORK.md there), commit 5f2abea
+  compiler: rustc 1.99.1 (58cf8f9c3 2026-10-13), image rust:1-bookworm (glibc 2.36), aarch64-linux-gnu-gcc (Debian 12.2.0)
+  target:   aarch64-unknown-linux-gnu, cargo build --release -p zen-ffi --target aarch64-unknown-linux-gnu (Cargo.lock as committed), aarch64-linux-gnu-strip --strip-debug
+  sha256:   97db2aa9566933bba2a0470fe1d03e8d84ee8bfe945c0362440d07a65f9e7143
   status:   supported
 
 deps/darwin_amd64/libzen_ffi.a
